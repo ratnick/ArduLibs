@@ -563,3 +563,8 @@ WiFiManager/extras/template.h
 WiFiManager/extras/WiFiManager.template.html
 WiFiManager/travis/common.sh
 WifiMultihotspot/wifipasswords.h
+*.zip
+Firebase_ESP8266_Client/examples/Basic_with_rootCA/Basic_with_rootCA.ino
+Firebase_ESP8266_Client/
+FirebaseJson/
+StructJsonConvert/

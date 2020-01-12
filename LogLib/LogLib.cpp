@@ -5,15 +5,15 @@
 #include "LogLib.h"
 #include <TimeLib.h>
 
-#include <ArduinoJson.hpp>
-#include <ArduinoJson.h>
-#include <FirebaseESP8266HTTPClient.h>
+//#include <ArduinoJson.hpp>
+//#include <ArduinoJson.h>
+//#include <FirebaseESP8266HTTPClient.h>
 
 String FB_FullLogPath;
 int MaxLogLength;
 FirebaseData* FB_firebaseData;
 boolean FB_log_initialized = false;
-void SendLogToFirebase(const char* jsonStr);
+void SendLogToFirebase();
 
 
 int debugLevel = 0;
@@ -80,11 +80,7 @@ void OutputLine(int dbgLevel, const char * fncName, const char* s) {   // only f
 		Serial.println(logStr);
 	}
 	if (FB_log_initialized && (dbgLevel <= fbDebugLevel)) {
-		for (int i = 0; i < strlen(fb_logStr); i++) {   // for some strange reason, JSON format seems not to accept punctuation mark in the key. So we replace with comma.
-			if (logStr[i] == '.') { logStr[i] = ','; }
-		}
-		sprintf(fb_logStr, "{\n\"%s\": \" \"\n}", logStr);
-		SendLogToFirebase(fb_logStr);
+		SendLogToFirebase();
 	}
 }
 
@@ -130,30 +126,52 @@ void LogLinef(int dbgLevel, const char * fncName, const char * format, ...) {
 	OutputLine(dbgLevel, fncName, s.c_str());
 }
 
-
 void InitFirebaseLogging(FirebaseData *firebaseDataPtr, String _FB_BasePath, String _subPath, int _JSON_BUFFER_LENGTH) {
-	FB_FullLogPath = _FB_BasePath + "/" + _subPath + "/";
-	MaxLogLength = _JSON_BUFFER_LENGTH;
-	FB_firebaseData = firebaseDataPtr;
-	FB_log_initialized = true;
+
+	if (!FB_log_initialized) {
+		LogLine(2,__FUNCTION__, "Begin");
+		FB_FullLogPath = _FB_BasePath + "/" + _subPath + "/";
+		MaxLogLength = _JSON_BUFFER_LENGTH;
+		FB_firebaseData = firebaseDataPtr;
+		FB_log_initialized = true;
+	}
+	else {
+		LogLine(4, __FUNCTION__, "already initialized");
+	}
 }
 
-void SendLogToFirebase(const char * jsonStr) {
+boolean FirebaseLoggingIsInitialized() {
+	return FB_log_initialized;
+}
 
+void SendLogToFirebase() {
 	boolean res = true;
+	int len = strlen(logStr);
+
 	// NOTE: If Firebase makes error apparantly without reason, try to update the fingerprint in FirebaseHttpClient.h. See https://github.com/FirebaseExtended/firebase-arduino/issues/328
 
-	if (strlen(jsonStr) < MaxLogLength) {
-		res = Firebase.updateNode(*FB_firebaseData, FB_FullLogPath, String(jsonStr));
-		//Serial.printf("\n%s - %d - %s", __FUNCTION__, res, jsonStr);
+	if (len < MaxLogLength) {
+
+		FirebaseJson jso;
+		// clean string (https://stackoverflow.com/questions/19132867/adding-firebase-data-dots-and-forward-slashes)
+		for (int i = 0; i < len; i++) {
+			if (logStr[i] == '.') { logStr[i] = ','; }
+			if (logStr[i] == '/') { logStr[i] = '\\'; }
+			if (logStr[i] == '\n') { logStr[i] = '§'; }
+		}
+		logStr[0] = '|';
+		logStr[len] = '|';
+		logStr[len+1] = '\0';
+
+		jso.add(logStr, "");
+		res = Firebase.updateNode(*FB_firebaseData, FB_FullLogPath, jso);
+		//	Serial.printf("\n%s - %d - %s", __FUNCTION__, res, logStr);
 		if (res == false) {
-			Serial.printf("** Log NOT written to Firebase: %s - length=%d - Firebase error msg: %s\n%s\n", __FUNCTION__, strlen(jsonStr), FB_FullLogPath.c_str(), jsonStr);
-			// will crash: 
+			Serial.printf("** Log NOT written to Firebase first time: %s - length=%d - path: %s  logStr:\n|%s|\n", __FUNCTION__, strlen(logStr), FB_FullLogPath.c_str(), logStr);
 		}
 	}
 	else {
-		//LogLine(0, __FUNCTION__, "**** ERROR SET/PUSH FAILED: JSON too long. CRASHING ON PURPOSE");
-		Serial.println(jsonStr);
-		int i = 0 / 0;  // crash
+		LogLine(1, __FUNCTION__, "**** ERROR: log too long to send to Firebase: ");
+		Serial.println(logStr);
 	}
 }
