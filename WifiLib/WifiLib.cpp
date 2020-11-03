@@ -8,11 +8,12 @@ const char timeServer[] = "0.dk.pool.ntp.org"; // Danish NTP Server
 WiFiClientSecure wifiClient;
 byte macAddr[6];
 //WiFiClient wifiClient;
-const int MAX_CONNECT_RETRIES = 2;
+const int MAX_CONNECT_RETRIES = 2; 
 
 #include "wifipasswords.h"
 
 /* The file wifipasswords.h is private and has the following format:
+const int MAX_HOTSPOTS_DEFINED = 7;  // nbr of hotspots below
 hotspot_cred SSID_pairs[MAX_HOTSPOTS_DEFINED] = {
 	{ "nohrx-yy", "*******" },
 	{ "nohrx", ""*******" },

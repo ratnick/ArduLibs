@@ -33,7 +33,6 @@ typedef struct
 	String pwd;
 } hotspot_cred;
 
-const int MAX_HOTSPOTS_DEFINED = 5;
 const bool INIT_HOTSPOT = true;  // false: start trying what's already stored in EEPROM from last successful connection
 const int WIFI_STRENGTH_LIMIT = -80; //db
 
