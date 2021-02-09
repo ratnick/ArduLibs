@@ -1,4 +1,6 @@
 #include "WifiLib.h"
+#include "OTALib.h"
+
 //#include <time.h>
 
 
@@ -81,25 +83,27 @@ int initWifi(char _wifiSSID[], char _wifiPwd[], struct WifiDevice *wifiDevice) {
 				Serial.print("initWifi: disconnect before retrying - ");
 				WiFi.disconnect();
 				Serial.print("initWifi: trying the SSID and pwd stored in EEPROM: "); // +String(_wifiSSID));
+				Serial.println(_wifiSSID);
 				WiFi.begin(_wifiSSID, _wifiPwd);
 
 				// NNR: We should not proceed before we are connected to a wifi
-				delay(500);
+				delayNonBlocking(500);
 				retry = 0;
 				while (WiFi.status() != WL_CONNECTED && retry++ < MaxRetriesWithSamePwd) {
-					delay(500);
+					delayNonBlocking(500);
 					Serial.print(".");
 				}
 
 				if (WiFi.status() == WL_CONNECTED && IsWifiStrenghtOK()) {
-					Serial.println(" => connected OK with already stored ssid/pwd");
+					Serial.print(" => connected OK with already stored ssid/pwd: ");
+					Serial.println(_wifiSSID);
 					return 100;
 				}
 			}
 
 			while (wifiDevice->WifiIndex <= wifiDevice->wifiPairs) {
 
-				if (wifiDevice->LastWifiTime > millis()) { delay(500); }
+				if (wifiDevice->LastWifiTime > millis()) { delayNonBlocking(500); }
 
 				initWifiDevice(wifiDevice->WifiIndex, wifiDevice);
 				Serial.print("initWifi: trying: " + wifiDevice->currentSSID + " WifiIndex="); 
@@ -108,15 +112,16 @@ int initWifi(char _wifiSSID[], char _wifiPwd[], struct WifiDevice *wifiDevice) {
 				Serial.print(" .. begin:");
 
 				// NNR: We should not proceed before we are connected to a wifi
-				delay(500);
+				delayNonBlocking(500);
 				retry = 0;
 				while (WiFi.status() != WL_CONNECTED && retry++ < MaxRetriesWithSamePwd) {
-					delay(500);
+					delayNonBlocking(500);
 					Serial.print(".");
 				}
 
 				if (WiFi.status() == WL_CONNECTED && IsWifiStrenghtOK()) {
-					Serial.println(" => connected OK");
+					Serial.print(" => connected OK to: ");
+					Serial.println(_wifiSSID);
 					return wifiDevice->WifiIndex;
 				}
 				else {
@@ -131,7 +136,7 @@ int initWifi(char _wifiSSID[], char _wifiPwd[], struct WifiDevice *wifiDevice) {
 	}
 
 	Serial.println("*** Could not connect to Wifi at all. Try 1) power cycling. 2) look if your SSID is defined in the list.");
-	delay(10000);
+	delayNonBlocking(10000);
 	return -1;
 }
 
@@ -142,8 +147,17 @@ boolean IsWifiStrenghtOK() {
 	return (WiFi.RSSI() > WIFI_STRENGTH_LIMIT);
 }
 
-void PrintIPAddress() {
+String GetIpAddress()
+{
+	IPAddress ipAddress = WiFi.localIP();
+	return String(ipAddress[0]) + String(".") + \
+		String(ipAddress[1]) + String(".") + \
+		String(ipAddress[2]) + String(".") + \
+		String(ipAddress[3]);
+}
 
+void PrintIPAddress() {
+/*
 	int ipAddress;
 	byte ipQuads[4];
 
@@ -152,9 +166,13 @@ void PrintIPAddress() {
 	ipQuads[1] = (byte)((ipAddress >> 8) & 0xFF);
 	ipQuads[2] = (byte)((ipAddress >> 16) & 0xFF);
 	ipQuads[3] = (byte)((ipAddress >> 24) & 0xFF);
-
-	//print the local IP address
 	Serial.println("Connected with ip address: " + String(ipQuads[0]) + "." + String(ipQuads[1]) + "." + String(ipQuads[2]) + "." + String(ipQuads[3]));
+*/
+	//print the local IP address
+	Serial.print("Connected with ip address: ");
+	Serial.print(WiFi.localIP());
+	Serial.print(" on SSID: ");
+	Serial.println(WiFi.SSID());
 }
 
 void getCurrentTime() {

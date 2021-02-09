@@ -46,14 +46,14 @@ struct WifiDevice {
 	String pwd;
 };
 
-
-
 int initWifi(struct WifiDevice *wifiDevice);
 int initWifi(char _wifiSSID[], char _wifiPwd[], struct WifiDevice *wifiDevice);
 
 static void initWifiDevice(int wifiSet);
 boolean IsWifiStrenghtOK();
 void PrintIPAddress();
+String GetIpAddress();
+
 void getCurrentTime();
 boolean getCurrentTimeB();
 void listNetworks();
