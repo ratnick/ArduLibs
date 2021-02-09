@@ -3,15 +3,14 @@
 // 
 
 #include "LogLib.h"
+#include "OTALib.h"
 #include <TimeLib.h>
-
-//#include <ArduinoJson.hpp>
-//#include <ArduinoJson.h>
-//#include <FirebaseESP8266HTTPClient.h>
+#include "FirebaseLib.h"
 
 String FB_FullLogPath;
 int MaxLogLength;
-FirebaseData* FB_firebaseData;
+FirebaseData FB_firebaseDataCopy;
+
 boolean FB_log_initialized = false;
 void SendLogToFirebase();
 
@@ -73,20 +72,28 @@ void ConvertToShortTimeStr(uint64_t CurrentTime, char timeStr[]) {
 
 char logStr[1024];
 char fb_logStr[1024];
-void OutputLine(int dbgLevel, const char * fncName, const char* s) {   // only function actually writing to the screen
-
+void OutputLine(int dbgLevel, const char * fncName, const char* s, bool sendToCloud) {   // only function actually writing to the screen
 	sprintf(logStr, "%s *%d* - %s - %s\0", TimeString().c_str(), dbgLevel, fncName, s);
 	if (dbgLevel <= debugLevel) {
 		Serial.println(logStr);
 	}
-	if (FB_log_initialized && (dbgLevel <= fbDebugLevel)) {
+	if (sendToCloud && FB_log_initialized && (dbgLevel <= fbDebugLevel)) {
 		SendLogToFirebase();
 	}
 }
 
-void LogLine(int dbgLevel, const char * fncName, const char * s) { 
-	OutputLine(dbgLevel, fncName, s); 
+void OutputLine(int dbgLevel, const char* fncName, const char* s) {
+	OutputLine(dbgLevel, fncName, s, true);
 }
+
+void LogLine(int dbgLevel, const char * fncName, const char * s) {
+	OutputLine(dbgLevel, fncName, s, true); 
+}
+
+void LogLine(int dbgLevel, const char* fncName, const char* s, bool sendToCloud) {
+	OutputLine(dbgLevel, fncName, s, sendToCloud);
+}
+
 
 void LogLinef(int dbgLevel, const char * fncName, const char * format, ...) {
 
@@ -104,7 +111,8 @@ void LogLinef(int dbgLevel, const char * fncName, const char * format, ...) {
 		s += f.substring(startStr, startPar);
 		startStr = startPar + 2;
 		parFormat = f[startPar + 1];
-//		Serial.printf("\nStartPar=%d, startStr=%d, parFormat=%c, s=%s  VALUE=", startPar, startStr, parFormat , s.c_str());
+
+//nnr		Serial.printf("\nStartPar=%d, startStr=%d, parFormat=%c, s=%s  VALUE=", startPar, startStr, parFormat , s.c_str());
 
 		switch (parFormat)	{
 			case 'd': s += va_arg(arg, int);
@@ -126,18 +134,25 @@ void LogLinef(int dbgLevel, const char * fncName, const char * format, ...) {
 	OutputLine(dbgLevel, fncName, s.c_str());
 }
 
-void InitFirebaseLogging(FirebaseData *firebaseDataPtr, String _FB_BasePath, String _subPath, int _JSON_BUFFER_LENGTH) {
+void InitFirebaseLogging(FirebaseData &firebaseData, String _FB_BasePath, String _subPath, int _JSON_BUFFER_LENGTH) {
 
-	if (!FB_log_initialized) {
-		LogLine(2,__FUNCTION__, "Begin");
-		FB_FullLogPath = _FB_BasePath + "/" + _subPath + "/";
-		MaxLogLength = _JSON_BUFFER_LENGTH;
-		FB_firebaseData = firebaseDataPtr;
-		FB_log_initialized = true;
+	LogLinef(4, __FUNCTION__, "Begin: fbDebugLevel=%d, FB_log_initialized=%d", fbDebugLevel, FB_log_initialized);
+	if (fbDebugLevel >= 0) {
+		if (!FB_log_initialized)  {
+			LogLine(2,__FUNCTION__, "Begin");
+			FB_FullLogPath = _FB_BasePath + "/" + _subPath + "/";
+			MaxLogLength = _JSON_BUFFER_LENGTH;
+			FB_firebaseDataCopy = firebaseData;
+			FB_log_initialized = true;
+		}
+		else {
+			LogLine(4, __FUNCTION__, "already initialized");
+		}
 	}
 	else {
-		LogLine(4, __FUNCTION__, "already initialized");
+		FB_log_initialized = false;
 	}
+	LogLinef(4, __FUNCTION__, "  End: fbDebugLevel=%d, FB_log_initialized=%d", fbDebugLevel, FB_log_initialized);
 }
 
 boolean FirebaseLoggingIsInitialized() {
@@ -145,33 +160,52 @@ boolean FirebaseLoggingIsInitialized() {
 }
 
 void SendLogToFirebase() {
-	boolean res = true;
+	bool res = true;
+	bool res2 = true;
 	int len = strlen(logStr);
 
-	// NOTE: If Firebase makes error apparantly without reason, try to update the fingerprint in FirebaseHttpClient.h. See https://github.com/FirebaseExtended/firebase-arduino/issues/328
+	// NOTE: If Firebase makes error apparantly without reason, try to update the "secret" from Firebase in FIREBASE_AUTH 
+	if (FirebaseLoggingIsInitialized()) {
+		if (len < MaxLogLength - 1) {
 
-	if (len < MaxLogLength) {
+			FirebaseJson jso;
+			// clean string (https://stackoverflow.com/questions/19132867/adding-firebase-data-dots-and-forward-slashes)
+			for (int i = 0; i < len; i++) {
+				if (logStr[i] == '.') { logStr[i] = ','; }
+				if (logStr[i] == '/') { logStr[i] = '|'; }
+				if (logStr[i] == '\n') { logStr[i] = '§'; }
+				if (logStr[i] == '[') { logStr[i] = '{'; }
+				if (logStr[i] == ']') { logStr[i] = '}'; }
+				if (logStr[i] == '$') { logStr[i] = '§'; }
+			}
+			logStr[0] = '|';
+			logStr[len] = '|';
+			logStr[len + 1] = '\0';
 
-		FirebaseJson jso;
-		// clean string (https://stackoverflow.com/questions/19132867/adding-firebase-data-dots-and-forward-slashes)
-		for (int i = 0; i < len; i++) {
-			if (logStr[i] == '.') { logStr[i] = ','; }
-			if (logStr[i] == '/') { logStr[i] = '\\'; }
-			if (logStr[i] == '\n') { logStr[i] = '§'; }
+			jso.add(logStr, "");  // Note the key is the actual string. The data in that key is empty.
+			String jsoStr;
+			(jso).toString(jsoStr, true);
+
+			//nnr this should not be necessary: delayNonBlocking(300);  // we need to make it doesn't clog. Simple solution TODO a better one.
+			res = Firebase.updateNode(FB_firebaseDataCopy, FB_FullLogPath, jsoStr);
+			//	Serial.printf("\n%s - %d - %s", __FUNCTION__, res, logStr);
+			if (!res) {
+				Serial.printf("** Log NOT written to Firebase 1st time: %s - length=%d - path: %s  logStr:\n>%s<\n\n", __FUNCTION__, strlen(logStr), FB_FullLogPath.c_str(), logStr);
+				Serial.println(FB_FullLogPath);
+				Serial.println(jsoStr);
+				//delayNonBlocking(500);
+				//jso.add(logStr, "");
+				//res2 = Firebase.updateNode(*FB_firebaseDataptr, FB_FullLogPath, jso);
+			}
 		}
-		logStr[0] = '|';
-		logStr[len] = '|';
-		logStr[len+1] = '\0';
-
-		jso.add(logStr, "");
-		res = Firebase.updateNode(*FB_firebaseData, FB_FullLogPath, jso);
-		//	Serial.printf("\n%s - %d - %s", __FUNCTION__, res, logStr);
-		if (res == false) {
-			Serial.printf("** Log NOT written to Firebase first time: %s - length=%d - path: %s  logStr:\n|%s|\n", __FUNCTION__, strlen(logStr), FB_FullLogPath.c_str(), logStr);
+		else {
+			LogLine(1, __FUNCTION__, "**** ERROR: log too long to send to Firebase: ");
+			Serial.println(logStr);
 		}
 	}
 	else {
-		LogLine(1, __FUNCTION__, "**** ERROR: log too long to send to Firebase: ");
+		LogLine(0, __FUNCTION__, "**** ERROR: Firebase logging not initialized yet.");
 		Serial.println(logStr);
 	}
+
 }
